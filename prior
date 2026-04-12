@@ -9,9 +9,11 @@ local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 
-if LocalPlayer.PlayerGui:FindFirstChild("PriorityPanel") then
-    LocalPlayer.PlayerGui.PriorityPanel:Destroy()
-end
+pcall(function()
+    if LocalPlayer.PlayerGui:FindFirstChild("PriorityPanel") then
+        LocalPlayer.PlayerGui.PriorityPanel:Destroy()
+    end
+end)
 
 if getgenv().PrioritySystem then
     pcall(function() getgenv().PrioritySystem.Disable() end)
@@ -24,6 +26,7 @@ getgenv().PrioritySystem = {
     SelectedData = nil,
     ESPHighlight = nil,
     ESPBillboard = nil,
+    ESPLinePart = nil,
     AutoSelect = true,
     Active = true
 }
@@ -38,42 +41,51 @@ local Synchronizer = require(Packages:WaitForChild("Synchronizer"))
 local AnimalsData = require(Datas:WaitForChild("Animals"))
 local AnimalsShared = require(Shared:WaitForChild("Animals"))
 
-local WHITELIST = {
-    ["Headless Horseman"] = true,
-    ["Ketchuru and Musturu"] = true,
-    ["Burguro And Fryuro"] = true,
-    ["Tang Tang Keletang"] = true,
-    ["Tictac Sahur"] = true,
-    ["Tralaledon"] = true,
-    ["Dragon Cannelloni"] = true,
-    ["Los Tacoritas"] = true,
-    ["Fragrama and Chocrama"] = true,
-    ["Spaghetti Tualetti"] = true,
-    ["La Secret Combinasion"] = true,
-    ["Nuclearo Dinossauro"] = true,
-    ["Los Primos"] = true,
-    ["La Ginger Sekolah"] = true,
-    ["Festive 67"] = true,
-    ["Ketupat Kepat"] = true,
-    ["Eviledon"] = true,
-    ["Spooky and Pumpky"] = true,
-    ["Cooki and Milki"] = true,
-    ["Garama and Madundung"] = true,
-    ["Reinito Sleighito"] = true,
-    ["Orcaledon"] = true,
-    ["Capitano Moby"] = true,
-    ["Lavadorito Spinito"] = true,
-    ["La Supreme Combinasion"] = true,
-    ["Guest 666"] = true,
-    ["Strawberry Elephant"] = true,
-    ["Dragon Gingerini"] = true,
-    ["Meowl"] = true,
-    ["Skibidi Toilet"] = true,
+local PRIORITY_ORDER = {
+    "Headless Horseman",
+    "Strawberry Elephant",
+    "Meowl",
+    "Skibidi Toilet",
+    "La Supreme Combinasion",
+    "Dragon Gingerini",
+    "Dragon Cannelloni",
+    "Foxini Laternini",
+    "La Casa Boo",
+    "Reinito Sleighito",
+    "Griffin",
+    "Fragrama and Chocrama",
+    "Rosey and Teddy",
+    "Love Love Bear",
+    "Ketupat Bros",
+    "Cooki and Milki",
+    "Gingerat Gerat",
+    "Spooky and Pumpky",
+    "Festive 67",
+    "La Food Combinasion",
+    "Cash or Card",
+    "Arcadragon",
+    "Celestial Pegasus",
+    "Fortunu and Cashuru",
+    "Capitano Moby",
+    "Popuru and Fizzuru",
+    "Burguro And Fryuro",
+    "La Secret Combinasion",
+    "Garama and Madundung",
+    "Cloverat Clapat",
+    "Lavadorito Spinito",
+    "Ketchuru and Musturu",
+    "Tictac Sahur",
+    "Ketupat Kepat",
+    "Tang Tang Keletang"
 }
 
+local PRIORITY_RANK = {}
+for i, name in ipairs(PRIORITY_ORDER) do
+    PRIORITY_RANK[name] = i
+end
+
 local allAnimalsCache = {}
-local lastAnimalData = {}
-local ScreenGui, Main, ScrollFrame, SelectedLabel, EntryButtons
+local ScreenGui, Main, ScrollFrame, SelectedLabel, EntryButtons = nil, nil, nil, nil, nil
 
 local function Format(n)
     if n >= 1e12 then return string.format("%.1fT", n / 1e12) end
@@ -133,8 +145,6 @@ local function getAnimalModel(plotName, slot)
     if not plots then return nil end
     local plot = plots:FindFirstChild(plotName)
     if not plot then return nil end
-
-    -- Method 1: AnimalPodiums
     local podiums = plot:FindFirstChild("AnimalPodiums")
     if podiums then
         local podium = podiums:FindFirstChild(tostring(slot))
@@ -147,7 +157,6 @@ local function getAnimalModel(plotName, slot)
                     end
                 end
             end
-            -- Deeper search
             for _, child in pairs(podium:GetDescendants()) do
                 if child:IsA("Model") then
                     local root = child:FindFirstChild("HumanoidRootPart") or child.PrimaryPart
@@ -156,19 +165,16 @@ local function getAnimalModel(plotName, slot)
                     end
                 end
             end
-            -- Return podium position even without model
             local podiumPos = podium:GetPivot().Position
             return nil, podiumPos
         end
     end
-
     return nil, nil
 end
 
 local function getWorldPosition(plotName, slot)
     local _, pos = getAnimalModel(plotName, slot)
     if pos then return pos end
-
     local plots = Workspace:FindFirstChild("Plots")
     if not plots then return nil end
     local plot = plots:FindFirstChild(plotName)
@@ -180,6 +186,118 @@ local function getWorldPosition(plotName, slot)
         return podium:GetPivot().Position
     end
     return nil
+end
+
+local function RemoveESP()
+    if PS.ESPHighlight then
+        pcall(function() PS.ESPHighlight:Destroy() end)
+        PS.ESPHighlight = nil
+    end
+    if PS.ESPBillboard then
+        pcall(function() PS.ESPBillboard:Destroy() end)
+        PS.ESPBillboard = nil
+    end
+    if PS.ESPLinePart then
+        pcall(function() PS.ESPLinePart:Destroy() end)
+        PS.ESPLinePart = nil
+    end
+end
+
+local function CreateESP(model, data)
+    RemoveESP()
+    if not model then return end
+    local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+    if not root then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "PriorityHighlight"
+    highlight.Adornee = model
+    highlight.FillTransparency = 0.8
+    highlight.OutlineTransparency = 0
+    if data.priorityRank ~= math.huge then
+        highlight.FillColor = Color3.fromRGB(255, 100, 255)
+        highlight.OutlineColor = Color3.fromRGB(255, 150, 255)
+    else
+        highlight.FillColor = Color3.fromRGB(255, 200, 50)
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 100)
+    end
+    highlight.Parent = CoreGui
+    PS.ESPHighlight = highlight
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "PriorityESP"
+    billboard.Adornee = root
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = CoreGui
+    PS.ESPBillboard = billboard
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = data.name
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextColor3 = data.priorityRank ~= math.huge and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(255, 220, 100)
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    nameLabel.TextScaled = true
+    nameLabel.Parent = billboard
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    valueLabel.Position = UDim2.new(0, 0, 0.5, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = "$" .. Format(data.genValue) .. "/s"
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    valueLabel.TextStrokeTransparency = 0
+    valueLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    valueLabel.TextScaled = true
+    valueLabel.Parent = billboard
+
+    local char = LocalPlayer.Character
+    local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+    if not hrp then return end
+
+    local line = Instance.new("Part")
+    line.Name = "PriorityLine"
+    line.Anchored = true
+    line.CanCollide = false
+    line.CanQuery = false
+    line.CanTouch = false
+    line.Material = Enum.Material.Neon
+    line.Color = data.priorityRank ~= math.huge and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(255, 220, 100)
+    line.Transparency = 0.15
+    line.Size = Vector3.new(0.25, 0.25, 1)
+    line.Parent = Workspace
+    PS.ESPLinePart = line
+
+    local thisData = data
+    task.spawn(function()
+        while PS.ESPLinePart == line and PS.SelectedData == thisData and line.Parent do
+            local currentChar = LocalPlayer.Character
+            local currentHRP = currentChar and (currentChar:FindFirstChild("HumanoidRootPart") or currentChar.PrimaryPart)
+            if not currentHRP or not root or not root.Parent then
+                line.Transparency = 1
+            else
+                local a = currentHRP.Position
+                local b = root.Position
+                local mid = (a + b) / 2
+                local dist = (a - b).Magnitude
+                line.Size = Vector3.new(0.25, 0.25, dist)
+                line.CFrame = CFrame.lookAt(mid, b)
+                line.Transparency = 0.15
+            end
+            task.wait(0.03)
+        end
+        if line and line.Parent then
+            pcall(function() line:Destroy() end)
+        end
+        if PS.ESPLinePart == line then
+            PS.ESPLinePart = nil
+        end
+    end)
 end
 
 local function scanAllPlots()
@@ -230,7 +348,7 @@ local function scanAllPlots()
                         worldPos = getWorldPosition(plot.Name, slot)
                     end
 
-                    local isWhitelisted = WHITELIST[displayName] or WHITELIST[animalName] or false
+                    local rank = PRIORITY_RANK[displayName] or PRIORITY_RANK[animalName]
                     local uid = plot.Name .. "_" .. tostring(slot)
 
                     table.insert(newCache, {
@@ -243,7 +361,7 @@ local function scanAllPlots()
                         slot = tostring(slot),
                         uid = uid,
                         worldPosition = worldPos,
-                        isWhitelisted = isWhitelisted,
+                        priorityRank = rank or math.huge,
                         model = model,
                     })
                 end
@@ -252,14 +370,14 @@ local function scanAllPlots()
     end
 
     table.sort(newCache, function(a, b)
-        if a.isWhitelisted and not b.isWhitelisted then return true end
-        if not a.isWhitelisted and b.isWhitelisted then return false end
+        if a.priorityRank ~= b.priorityRank then
+            return a.priorityRank < b.priorityRank
+        end
         return a.genValue > b.genValue
     end)
 
     allAnimalsCache = newCache
 
-    -- Update SelectedData reference if still valid
     if PS.SelectedUID then
         local found = false
         for _, data in ipairs(allAnimalsCache) do
@@ -280,69 +398,18 @@ local function scanAllPlots()
     end
 end
 
-local function RemoveESP()
-    if PS.ESPHighlight then
-        pcall(function() PS.ESPHighlight:Destroy() end)
-        PS.ESPHighlight = nil
-    end
-    if PS.ESPBillboard then
-        pcall(function() PS.ESPBillboard:Destroy() end)
-        PS.ESPBillboard = nil
-    end
-end
+EntryButtons = {}
 
-local function CreateESP(model, data)
-    RemoveESP()
-    if not model then return end
-    local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-    if not root then return end
-
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "PriorityHighlight"
-    highlight.Adornee = model
-    highlight.FillTransparency = 0.8
-    highlight.OutlineTransparency = 0
-    if data.isWhitelisted then
-        highlight.FillColor = Color3.fromRGB(255, 100, 255)
-        highlight.OutlineColor = Color3.fromRGB(255, 150, 255)
+local function UpdateEntryVisual(entry, isSelected)
+    if isSelected then
+        entry.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        local dot = entry:FindFirstChild("SelectDot")
+        if dot then dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255) end
     else
-        highlight.FillColor = Color3.fromRGB(255, 200, 50)
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 100)
+        entry.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+        local dot = entry:FindFirstChild("SelectDot")
+        if dot then dot.BackgroundColor3 = Color3.fromRGB(50, 50, 55) end
     end
-    highlight.Parent = CoreGui
-    PS.ESPHighlight = highlight
-
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "PriorityESP"
-    billboard.Adornee = root
-    billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 5, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Parent = CoreGui
-    PS.ESPBillboard = billboard
-
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = (data.isWhitelisted and "★ " or "") .. data.name .. (data.isWhitelisted and " ★" or "")
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextColor3 = data.isWhitelisted and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(255, 220, 100)
-    nameLabel.TextStrokeTransparency = 0
-    nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    nameLabel.TextScaled = true
-    nameLabel.Parent = billboard
-
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Size = UDim2.new(1, 0, 0.5, 0)
-    valueLabel.Position = UDim2.new(0, 0, 0.5, 0)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Text = "$" .. Format(data.genValue) .. "/s"
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-    valueLabel.TextStrokeTransparency = 0
-    valueLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    valueLabel.TextScaled = true
-    valueLabel.Parent = billboard
 end
 
 local function UpdateSelection(data)
@@ -358,20 +425,6 @@ local function ClearSelection()
     PS.SelectedUID = nil
     PS.SelectedData = nil
     RemoveESP()
-end
-
-EntryButtons = {}
-
-local function UpdateEntryVisual(entry, isSelected)
-    if isSelected then
-        entry.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        local dot = entry:FindFirstChild("SelectDot")
-        if dot then dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255) end
-    else
-        entry.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-        local dot = entry:FindFirstChild("SelectDot")
-        if dot then dot.BackgroundColor3 = Color3.fromRGB(50, 50, 55) end
-    end
 end
 
 local function SelectTarget(data, manual)
@@ -392,18 +445,17 @@ local function SelectTarget(data, manual)
         PS.AutoSelect = false
     end
 
-    -- Refresh model and position
     local model, pos = getAnimalModel(data.plot, data.slot)
     data.model = model
     if pos then data.worldPosition = pos end
 
     UpdateSelection(data)
 
-    local prefix = data.isWhitelisted and "★ " or ""
     local autoText = PS.AutoSelect and "[AUTO] " or ""
     if SelectedLabel then
-        SelectedLabel.Text = autoText .. prefix .. data.name .. " ($" .. Format(data.genValue) .. "/s)"
-        SelectedLabel.TextColor3 = data.isWhitelisted and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(255, 220, 100)
+        local rankText = data.priorityRank ~= math.huge and ("#" .. tostring(data.priorityRank) .. " ") or ""
+        SelectedLabel.Text = autoText .. rankText .. data.name .. " ($" .. Format(data.genValue) .. "/s)"
+        SelectedLabel.TextColor3 = data.priorityRank ~= math.huge and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(255, 220, 100)
     end
 
     for _, entry in pairs(EntryButtons) do
@@ -433,7 +485,6 @@ local function AutoSelectBest()
     if PS.SelectedUID ~= best.uid then
         SelectTarget(best, false)
     else
-        -- Refresh model/position for existing selection
         local model, pos = getAnimalModel(best.plot, best.slot)
         best.model = model
         if pos then best.worldPosition = pos end
@@ -461,7 +512,6 @@ local function RefreshList()
     if PS.AutoSelect then
         AutoSelectBest()
     else
-        -- Refresh manual selection
         if PS.SelectedUID then
             local found = false
             for _, data in ipairs(allAnimalsCache) do
@@ -495,7 +545,6 @@ local function RefreshList()
         end
     end
 
-    -- Clean up removed entries
     local existingUIDs = {}
     for _, data in ipairs(allAnimalsCache) do
         existingUIDs[data.uid] = true
@@ -528,13 +577,18 @@ local function RefreshList()
             existingEntry.LayoutOrder = i
             local rank = existingEntry:FindFirstChild("RankLabel")
             if rank then
-                rank.Text = data.isWhitelisted and "★" or ("#" .. i)
-                rank.TextColor3 = data.isWhitelisted and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(80, 80, 90)
+                if data.priorityRank ~= math.huge then
+                    rank.Text = "#" .. tostring(data.priorityRank)
+                    rank.TextColor3 = Color3.fromRGB(255, 150, 255)
+                else
+                    rank.Text = "#" .. i
+                    rank.TextColor3 = Color3.fromRGB(80, 80, 90)
+                end
             end
             local nameLabel = existingEntry:FindFirstChild("NameLabel")
             if nameLabel then
                 nameLabel.Text = data.name
-                nameLabel.TextColor3 = data.isWhitelisted and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(210, 210, 215)
+                nameLabel.TextColor3 = data.priorityRank ~= math.huge and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(210, 210, 215)
             end
             local valueLabel = existingEntry:FindFirstChild("ValueLabel")
             if valueLabel then valueLabel.Text = "$" .. Format(data.genValue) .. "/s" end
@@ -551,11 +605,16 @@ local function RefreshList()
 
             local rank = Instance.new("TextLabel")
             rank.Name = "RankLabel"
-            rank.Size = UDim2.new(0, 24, 1, 0)
+            rank.Size = UDim2.new(0, 40, 1, 0)
             rank.Position = UDim2.new(0, 6, 0, 0)
             rank.BackgroundTransparency = 1
-            rank.Text = data.isWhitelisted and "★" or ("#" .. i)
-            rank.TextColor3 = data.isWhitelisted and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(80, 80, 90)
+            if data.priorityRank ~= math.huge then
+                rank.Text = "#" .. tostring(data.priorityRank)
+                rank.TextColor3 = Color3.fromRGB(255, 150, 255)
+            else
+                rank.Text = "#" .. i
+                rank.TextColor3 = Color3.fromRGB(80, 80, 90)
+            end
             rank.Font = Enum.Font.GothamBold
             rank.TextSize = 11
             rank.Parent = entry
@@ -563,10 +622,10 @@ local function RefreshList()
             local petName = Instance.new("TextLabel")
             petName.Name = "NameLabel"
             petName.Size = UDim2.new(0, 120, 0, 20)
-            petName.Position = UDim2.new(0, 32, 0, 4)
+            petName.Position = UDim2.new(0, 48, 0, 4)
             petName.BackgroundTransparency = 1
             petName.Text = data.name
-            petName.TextColor3 = data.isWhitelisted and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(210, 210, 215)
+            petName.TextColor3 = data.priorityRank ~= math.huge and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(210, 210, 215)
             petName.Font = Enum.Font.GothamBold
             petName.TextSize = 11
             petName.TextXAlignment = Enum.TextXAlignment.Left
@@ -575,8 +634,8 @@ local function RefreshList()
 
             local valueLabel = Instance.new("TextLabel")
             valueLabel.Name = "ValueLabel"
-            valueLabel.Size = UDim2.new(0, 70, 0, 16)
-            valueLabel.Position = UDim2.new(0, 32, 0, 24)
+            valueLabel.Size = UDim2.new(0, 90, 0, 16)
+            valueLabel.Position = UDim2.new(0, 48, 0, 24)
             valueLabel.BackgroundTransparency = 1
             valueLabel.Text = "$" .. Format(data.genValue) .. "/s"
             valueLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
@@ -587,7 +646,7 @@ local function RefreshList()
 
             local ownerLabel = Instance.new("TextLabel")
             ownerLabel.Size = UDim2.new(0, 80, 0, 16)
-            ownerLabel.Position = UDim2.new(0, 105, 0, 24)
+            ownerLabel.Position = UDim2.new(0, 138, 0, 24)
             ownerLabel.BackgroundTransparency = 1
             ownerLabel.Text = "by " .. data.owner
             ownerLabel.TextColor3 = Color3.fromRGB(80, 80, 90)
@@ -640,28 +699,11 @@ local function RefreshList()
         end
     end
 
-    -- Remove excess entries beyond count
-    for i = #EntryButtons, 1, -1 do
-        local entry = EntryButtons[i]
-        local uid = entry:GetAttribute("UID")
-        local inTop = false
-        for j = 1, count do
-            if allAnimalsCache[j] and allAnimalsCache[j].uid == uid then
-                inTop = true
-                break
-            end
-        end
-        if not inTop and not existingUIDs[uid] then
-            -- already removed above
-        end
-    end
-
     if ScrollFrame then
         ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, count * 50)
     end
 end
 
--- GUI Setup
 local parent = LocalPlayer:WaitForChild("PlayerGui")
 ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "PriorityPanel"
@@ -735,8 +777,7 @@ SelectedLabel.TextSize = 11
 SelectedLabel.TextXAlignment = Enum.TextXAlignment.Left
 SelectedLabel.Parent = SelectedInfo
 
--- Dragging
-local dragging, dragStart, startPos
+local dragging, dragStart, startPos = false, nil, nil
 Main.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
         dragging = true
@@ -756,7 +797,6 @@ UserInputService.InputEnded:Connect(function(i)
     end
 end)
 
--- API Functions
 function PS.Disable()
     PS.Active = false
     RemoveESP()
@@ -770,7 +810,6 @@ function PS.GetSelected()
 end
 
 function PS.GetSelectedModel()
-    -- Always try to get fresh model
     if PS.SelectedData then
         local model = getAnimalModel(PS.SelectedData.plot, PS.SelectedData.slot)
         if model then
@@ -783,7 +822,6 @@ end
 
 function PS.GetWorldPosition()
     if PS.SelectedData then
-        -- Always get fresh position
         local _, pos = getAnimalModel(PS.SelectedData.plot, PS.SelectedData.slot)
         if pos then
             PS.SelectedData.worldPosition = pos
@@ -817,10 +855,8 @@ function PS.GetOwner()
     return nil
 end
 
--- Initial scan
 RefreshList()
 
--- Main loop
 task.spawn(function()
     while PS.Active and ScreenGui and ScreenGui.Parent do
         task.wait(1)
