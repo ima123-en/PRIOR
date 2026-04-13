@@ -1,5 +1,7 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
 
+local MIN_GEN_VALUE = 50000000
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -267,7 +269,7 @@ local function CreateESP(model, data)
     line.CanQuery = false
     line.CanTouch = false
     line.Material = Enum.Material.Neon
-    line.Color = data.priorityRank ~= math.huge and Color3.fromRGB(255, 150, 255) or Color3.fromRGB(255, 220, 100)
+    line.Color = Color3.fromRGB(0, 0, 0)
     line.Transparency = 0.15
     line.Size = Vector3.new(0.25, 0.25, 1)
     line.Parent = Workspace
@@ -342,6 +344,10 @@ local function scanAllPlots()
                     local displayName = animalInfo.DisplayName or animalName
                     local mutation = animalData.Mutation or "None"
                     local genValue = AnimalsShared:GetGeneration(animalName, animalData.Mutation, animalData.Traits, nil)
+
+                    if genValue < MIN_GEN_VALUE then
+                        continue
+                    end
 
                     local model, worldPos = getAnimalModel(plot.Name, slot)
                     if not worldPos then
