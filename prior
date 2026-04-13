@@ -1,6 +1,6 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local MIN_GEN_VALUE = 50000000
+local MIN_GEN_VALUE = 40000000
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -87,6 +87,7 @@ for i, name in ipairs(PRIORITY_ORDER) do
 end
 
 local allAnimalsCache = {}
+local lastAnimalHash = {}
 local ScreenGui, Main, ScrollFrame, SelectedLabel, EntryButtons = nil, nil, nil, nil, nil
 
 local function Format(n)
@@ -302,6 +303,17 @@ local function CreateESP(model, data)
     end)
 end
 
+local function getAnimalHash(animalList)
+    if not animalList then return "" end
+    local hash = ""
+    for slot, data in pairs(animalList) do
+        if type(data) == "table" and data.Index then
+            hash = hash .. tostring(slot) .. tostring(data.Index) .. tostring(data.Mutation or "")
+        end
+    end
+    return hash
+end
+
 local function scanAllPlots()
     local plots = Workspace:FindFirstChild("Plots")
     if not plots then return end
@@ -332,6 +344,12 @@ local function scanAllPlots()
 
             local animalList = channel:Get("AnimalList")
             if not animalList then return end
+
+            local hash = getAnimalHash(animalList)
+            if lastAnimalHash[plotUID] == hash then
+            else
+                lastAnimalHash[plotUID] = hash
+            end
 
             for slot, animalData in pairs(animalList) do
                 if type(animalData) == "table" then
@@ -517,37 +535,35 @@ local function RefreshList()
 
     if PS.AutoSelect then
         AutoSelectBest()
-    else
-        if PS.SelectedUID then
-            local found = false
-            for _, data in ipairs(allAnimalsCache) do
-                if data.uid == PS.SelectedUID then
-                    found = true
-                    local model, pos = getAnimalModel(data.plot, data.slot)
-                    data.model = model
-                    if pos then data.worldPosition = pos end
-                    PS.SelectedModel = model
-                    PS.SelectedData = data
+    elseif PS.SelectedUID then
+        local found = false
+        for _, data in ipairs(allAnimalsCache) do
+            if data.uid == PS.SelectedUID then
+                found = true
+                local model, pos = getAnimalModel(data.plot, data.slot)
+                data.model = model
+                if pos then data.worldPosition = pos end
+                PS.SelectedModel = model
+                PS.SelectedData = data
 
-                    if model and model.Parent then
-                        if PS.ESPHighlight then
-                            PS.ESPHighlight.Adornee = model
-                        else
-                            CreateESP(model, data)
-                        end
-                        local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-                        if root and PS.ESPBillboard then
-                            PS.ESPBillboard.Adornee = root
-                        end
+                if model and model.Parent then
+                    if PS.ESPHighlight then
+                        PS.ESPHighlight.Adornee = model
+                    else
+                        CreateESP(model, data)
                     end
-                    break
+                    local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+                    if root and PS.ESPBillboard then
+                        PS.ESPBillboard.Adornee = root
+                    end
                 end
+                break
             end
-            if not found then
-                PS.AutoSelect = true
-                ClearSelection()
-                AutoSelectBest()
-            end
+        end
+        if not found then
+            PS.AutoSelect = true
+            ClearSelection()
+            AutoSelectBest()
         end
     end
 
@@ -865,7 +881,7 @@ RefreshList()
 
 task.spawn(function()
     while PS.Active and ScreenGui and ScreenGui.Parent do
-        task.wait(1)
+        task.wait(0.15)
         pcall(RefreshList)
     end
 end)
